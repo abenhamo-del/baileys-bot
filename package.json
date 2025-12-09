@@ -1,6 +1,6 @@
 {
   "name": "whatsapp-bot-baileys",
-  "version": "0.1.9",
+  "version": "1.0.0",
   "description": "Simple WhatsApp bot using Baileys",
   "main": "index.js",
   "scripts": {
