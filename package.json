@@ -11,8 +11,6 @@
   "keywords": ["whatsapp", "bot", "baileys", "automation", "nodejs"],
   "author": "nexoscreator",
   "license": "MIT",
-  "engines": {
-    "node": ">=18.17.0"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
