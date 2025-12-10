@@ -1,6 +1,5 @@
 /**
  * WhatsApp Bot Entry Point
- * Loads config, commands, events, and starts the bot.
  */
 
 const {
@@ -10,117 +9,121 @@ const {
 } = require("@whiskeysockets/baileys");
 
 const fs = require("fs");
-const pino = require("pino");
 const axios = require("axios");
+const pino = require("pino");
 const config = require("./utils");
 
 // ---- LOGGER ----
 const logger = pino({
-  level: config.logging?.level || "info",
+  level: "info",
 });
 
-// ----- LOAD COMMANDS -----
-const commands = new Map();
-fs.readdirSync("./commands").forEach((file) => {
-  const cmd = require(`./commands/${file}`);
-  if (cmd?.name) commands.set(cmd.name, cmd);
-});
-
-// ----- LOAD EVENTS -----
-const eventFiles = fs.readdirSync("./events").filter((f) => f.endsWith(".js"));
-const eventHandlers = [];
-
-for (const file of eventFiles) {
-  const eventModule = require(`./events/${file}`);
-  if (eventModule.eventName && typeof eventModule.handler === "function") {
-    eventHandlers.push(eventModule);
-  }
-}
-
-// ===========================
-//       START BOT
-// ===========================
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info");
   const { version, isLatest } = await fetchLatestBaileysVersion();
 
-  logger.info(`Using Baileys v${version.join(".")}, Latest: ${isLatest}`);
+  console.log(`🚀 Baileys v${version.join(".")} (latest: ${isLatest})`);
 
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: true, // מציג QR מקומית (חשוב!)
+    printQRInTerminal: true,
     logger: pino({ level: "silent" }),
-    browser: ["NexosBot", "Opera GX", "120.0.5543.204"],
-    generateHighQualityLinkPreview: true,
-    markOnlineOnConnect: config.bot?.online ?? true,
+    browser: ["MyBot", "Chrome", "1.0"],
     syncFullHistory: false,
     shouldSyncHistoryMessage: false,
+    markOnlineOnConnect: false,
   });
 
-  // ===========================
-  //  שמירת קרדנציאלס
-  // ===========================
+  // ============================
+  //       DEBUG לכל אירוע
+  // ============================
+  sock.ev.on("*", (event, data) => {
+    console.log("📡 EVENT:", event);
+  });
+
+  // ============================
+  //     שמירת קרדנציאלס
+  // ============================
   sock.ev.on("creds.update", saveCreds);
 
-  // ===========================
-  //    שליחת הודעות ל-n8n
-  // ===========================
+  // ============================
+  //  קליטת הודעות → שליחה ל-n8n
+  // ============================
   sock.ev.on("messages.upsert", async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg || !msg.message) return;
-
-    const isGroup = msg.key.remoteJid.endsWith("@g.us");
-    let groupName = null;
-
-    if (isGroup) {
-      try {
-        const metadata = await sock.groupMetadata(msg.key.remoteJid);
-        groupName = metadata.subject;
-      } catch (e) {
-        console.error("Could not read group metadata:", e.message);
-      }
-    }
-
-    const senderName = msg.pushName || "לא ידוע";
-    const senderPhone = msg.key.participant || msg.key.remoteJid;
-
-    const messageText =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      "";
-
-    const payload = {
-      group_name: groupName,
-      sender_name: senderName,
-      sender_phone: senderPhone,
-      message: messageText,
-      timestamp: Date.now(),
-    };
-
-    console.log("Sending message to n8n:", payload);
-
     try {
+      const msg = messages[0];
+      if (!msg || !msg.message) return;
+
+      const isGroup = msg.key.remoteJid.endsWith("@g.us");
+      let groupName = null;
+
+      if (isGroup) {
+        try {
+          const metadata = await sock.groupMetadata(msg.key.remoteJid);
+          groupName = metadata.subject || null;
+        } catch (err) {
+          console.log("⚠️ Cannot read group metadata:", err.message);
+        }
+      }
+
+      const senderName = msg.pushName || "לא ידוע";
+      const senderPhone = msg.key.participant || msg.key.remoteJid;
+
+      const messageText =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        msg.message.imageMessage?.caption ||
+        msg.message.videoMessage?.caption ||
+        "";
+
+      const payload = {
+        group_name: groupName,
+        sender_name: senderName,
+        sender_phone: senderPhone,
+        message: messageText,
+        remoteJid: msg.key.remoteJid,
+        is_group: isGroup,
+        timestamp: Date.now(),
+      };
+
+      console.log("📨 MESSAGE RECEIVED:", payload);
+
+      // ============================
+      //שליחה ל־n8n (URL תקין שלך)
+      // ============================
       await axios.post(
         "https://omerthestar11.app.n8n.cloud/webhook/84856633-337c-4b16-a3b0-de6d1bdf326c",
         payload
       );
-      console.log("Message forwarded successfully.");
+
+      console.log("✅ Sent to n8n");
     } catch (err) {
-      console.error("Error sending to n8n:", err.message);
+      console.error("❌ ERROR in messages.upsert:", err.message);
     }
   });
 
-  // ===========================
-  //   רישום אירועים אחרים
-  // ===========================
-  for (const { eventName, handler } of eventHandlers) {
-    if (eventName === "connection.update") {
-      sock.ev.on(eventName, handler(sock, logger, saveCreds, startBot));
-    } else {
-      sock.ev.on(eventName, handler(sock, logger));
+  // ============================
+  //   טיפול בניתוקים
+  // ============================
+  sock.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
+
+    if (connection === "close") {
+      const reason =
+        lastDisconnect?.error?.output?.statusCode ||
+        lastDisconnect?.error?.toString();
+
+      console.log("⚠️ CONNECTION CLOSED:", reason);
+
+      // התחברות מחדש
+      startBot();
     }
-  }
+
+    if (connection === "open") {
+      console.log("✅ Connected to WhatsApp");
+    }
+  });
 }
 
 startBot();
