@@ -10,11 +10,11 @@ const {
 } = require("@whiskeysockets/baileys");
 
 const fs = require("fs");
-const path = require("path");
 const pino = require("pino");
+const axios = require("axios");
 const config = require("./utils");
 
-// ---- SAFE LOGGER (WITHOUT pino-pretty) ----
+// ---- LOGGER ----
 const logger = pino({
   level: config.logging?.level || "info",
 });
@@ -37,7 +37,9 @@ for (const file of eventFiles) {
   }
 }
 
-// ---- START BOT ----
+// ===========================
+//       START BOT
+// ===========================
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info");
   const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -47,24 +49,74 @@ async function startBot() {
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: false, // Railway לא יכול להציג QR
+    printQRInTerminal: true, // מציג QR מקומית (חשוב!)
     logger: pino({ level: "silent" }),
     browser: ["NexosBot", "Opera GX", "120.0.5543.204"],
     generateHighQualityLinkPreview: true,
     markOnlineOnConnect: config.bot?.online ?? true,
-    syncFullHistory: config.bot?.history ?? false,
-    shouldSyncHistoryMessage: config.bot?.history ?? false,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: false,
   });
 
-  // שמירת קרדנציאלס
+  // ===========================
+  //  שמירת קרדנציאלס
+  // ===========================
   sock.ev.on("creds.update", saveCreds);
 
-  // רישום האירועים
+  // ===========================
+  //    שליחת הודעות ל-n8n
+  // ===========================
+  sock.ev.on("messages.upsert", async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg || !msg.message) return;
+
+    const isGroup = msg.key.remoteJid.endsWith("@g.us");
+    let groupName = null;
+
+    if (isGroup) {
+      try {
+        const metadata = await sock.groupMetadata(msg.key.remoteJid);
+        groupName = metadata.subject;
+      } catch (e) {
+        console.error("Could not read group metadata:", e.message);
+      }
+    }
+
+    const senderName = msg.pushName || "לא ידוע";
+    const senderPhone = msg.key.participant || msg.key.remoteJid;
+
+    const messageText =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      "";
+
+    const payload = {
+      group_name: groupName,
+      sender_name: senderName,
+      sender_phone: senderPhone,
+      message: messageText,
+      timestamp: Date.now(),
+    };
+
+    console.log("Sending message to n8n:", payload);
+
+    try {
+      await axios.post(
+        "https://omerthestari1.app.n8n.cloud/webhook-test/84856633-337c-4b16-a3b0-de6d1bdf326c",
+        payload
+      );
+      console.log("Message forwarded successfully.");
+    } catch (err) {
+      console.error("Error sending to n8n:", err.message);
+    }
+  });
+
+  // ===========================
+  //   רישום אירועים אחרים
+  // ===========================
   for (const { eventName, handler } of eventHandlers) {
     if (eventName === "connection.update") {
       sock.ev.on(eventName, handler(sock, logger, saveCreds, startBot));
-    } else if (eventName === "messages.upsert") {
-      sock.ev.on(eventName, handler(sock, logger, commands));
     } else {
       sock.ev.on(eventName, handler(sock, logger));
     }
