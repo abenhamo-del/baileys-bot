@@ -102,7 +102,7 @@ async function startBot() {
 
     try {
       await axios.post(
-        "https://omerthestar11.app.n8n.cloud/webhook-test/84856633-337c-4b16-a3b0-de6d1bdf326c",
+        "https://omerthestar11.app.n8n.cloud/webhook/84856633-337c-4b16-a3b0-de6d1bdf326c",
         payload
       );
       console.log("Message forwarded successfully.");
