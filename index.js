@@ -1,3 +1,4 @@
+console.log("### RUNNING NEW INDEX.JS 2025-12-13 ###");
 /**
  * Repo index.js – Verified Build...
  * Version stamp: 2025-12-13-01.
