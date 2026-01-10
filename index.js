@@ -77,7 +77,21 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
+sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
+  if (qr) {
+    console.log("=== QR CODE ===");
+    console.log(qr);
+  }
+
+  if (connection === "open") {
+    console.log("Connected to WhatsApp.");
+  }
+
+  if (connection === "close") {
+    const code = lastDisconnect?.error?.output?.statusCode;
+    console.log("Connection closed.", code || "");
+  }
+});
     if (connection === "open") {
       console.log("✅ Connected to WhatsApp.");
     }
