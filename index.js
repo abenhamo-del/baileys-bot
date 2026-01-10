@@ -5,9 +5,10 @@ const {
 } = require("@whiskeysockets/baileys");
 
 const pino = require("pino");
+const qrcode = require("qrcode-terminal");
 
 async function start() {
-  console.log("BOOT – QR TEST BOT");
+  console.log("BOOT - QR ONLY BOT");
 
   const { state, saveCreds } = await useMultiFileAuthState("auth_info");
   const { version } = await fetchLatestBaileysVersion();
@@ -21,21 +22,24 @@ async function start() {
 
   sock.ev.on("creds.update", saveCreds);
 
-  sock.ev.on("connection.update", ({ connection, qr }) => {
+  sock.ev.on("connection.update", (update) => {
+    const { connection, qr } = update;
+
     if (qr) {
-      console.log("===== QR CODE =====");
-      console.log(qr);
-      console.log("===================");
+      console.log("SCAN THIS QR:");
+      qrcode.generate(qr, { small: true });
     }
 
     if (connection === "open") {
-      console.log("✅ Connected to WhatsApp.");
+      console.log("CONNECTED TO WHATSAPP");
     }
 
     if (connection === "close") {
-      console.log("❌ Connection closed.");
+      console.log("CONNECTION CLOSED");
     }
   });
 }
 
-start().catch(console.error);
+start().catch((err) => {
+  console.error("FATAL ERROR:", err);
+});
